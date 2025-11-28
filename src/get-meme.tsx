@@ -7,10 +7,13 @@ import {
   confirmAlert,
   Grid,
   Icon,
+  launchCommand,
+  LaunchType,
   showToast,
   Toast,
 } from "@raycast/api";
-import { useCallback, useEffect, useState } from "react";
+import { useCachedPromise } from "@raycast/utils";
+import { useState } from "react";
 import { deleteMeme, getAllMemes, incrementUsage, toggleFavorite } from "./lib/storage";
 import type { Meme } from "./types";
 
@@ -79,6 +82,12 @@ function MemeGridItem({ meme, subtitle, onCopyUrl, onCopyImage, onToggleFavorite
               )}
               shortcut={{ modifiers: ["cmd", "shift"], key: "m" }}
             />
+            <Action
+              title="Store to Vault"
+              icon={Icon.Plus}
+              shortcut={{ modifiers: ["cmd"], key: "s" }}
+              onAction={() => launchCommand({ name: "store-meme", type: LaunchType.UserInitiated })}
+            />
           </ActionPanel.Section>
         </ActionPanel>
       }
@@ -87,20 +96,10 @@ function MemeGridItem({ meme, subtitle, onCopyUrl, onCopyImage, onToggleFavorite
 }
 
 export default function Command() {
-  const [memes, setMemes] = useState<Meme[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: memes = [], isLoading, mutate } = useCachedPromise(getAllMemes, [], {
+    keepPreviousData: false,
+  });
   const [searchText, setSearchText] = useState("");
-
-  const loadMemes = useCallback(async () => {
-    setIsLoading(true);
-    const allMemes = await getAllMemes();
-    setMemes(allMemes);
-    setIsLoading(false);
-  }, []);
-
-  useEffect(() => {
-    loadMemes();
-  }, [loadMemes]);
 
   // Filter memes
   const filteredMemes = memes.filter((meme) => {
@@ -113,14 +112,17 @@ export default function Command() {
     );
   });
 
-  // Separate favorites and recent, both sorted by date
-  const favorites = filteredMemes
-    .filter((m) => m.isFavorite)
-    .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime());
+  // Sort by last used (most recent first), then by added date for never-used items
+  const sortByRecentUse = (a: Meme, b: Meme) => {
+    const aTime = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+    const bTime = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+    if (aTime !== bTime) return bTime - aTime; // Most recently used first
+    return new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime(); // Then by added date
+  };
 
-  const recent = filteredMemes
-    .filter((m) => !m.isFavorite)
-    .sort((a, b) => new Date(b.addedAt).getTime() - new Date(a.addedAt).getTime());
+  const favorites = filteredMemes.filter((m) => m.isFavorite).sort(sortByRecentUse);
+
+  const recent = filteredMemes.filter((m) => !m.isFavorite).sort(sortByRecentUse);
 
   // Truncate description to ~60 chars to leave room for stats
   const truncateDescription = (desc?: string) => {
@@ -137,9 +139,19 @@ export default function Command() {
   };
 
   const handleCopyUrl = async (meme: Meme) => {
+    // Optimistically update cache, then persist to storage
+    const now = new Date().toISOString();
+    await mutate(
+      incrementUsage(meme.id).then(getAllMemes),
+      {
+        optimisticUpdate: (data) =>
+          data?.map((m) =>
+            m.id === meme.id ? { ...m, usageCount: m.usageCount + 1, lastUsedAt: now } : m
+          ),
+      }
+    );
     await closeMainWindow();
     await Clipboard.paste(meme.url);
-    await incrementUsage(meme.id);
     await showToast({ style: Toast.Style.Success, title: "Pasted" });
   };
 
@@ -152,8 +164,13 @@ export default function Command() {
   };
 
   const handleToggleFavorite = async (meme: Meme) => {
-    await toggleFavorite(meme.id);
-    await loadMemes();
+    await mutate(
+      toggleFavorite(meme.id).then(getAllMemes),
+      {
+        optimisticUpdate: (data) =>
+          data?.map((m) => (m.id === meme.id ? { ...m, isFavorite: !m.isFavorite } : m)),
+      }
+    );
   };
 
   const handleDelete = async (meme: Meme) => {
@@ -167,8 +184,12 @@ export default function Command() {
         },
       })
     ) {
-      await deleteMeme(meme.id);
-      await loadMemes();
+      await mutate(
+        deleteMeme(meme.id).then(getAllMemes),
+        {
+          optimisticUpdate: (data) => data?.filter((m) => m.id !== meme.id),
+        }
+      );
     }
   };
 
@@ -199,7 +220,7 @@ export default function Command() {
       ) : (
         <>
           {favorites.length > 0 && (
-            <Grid.Section title="Favorites" subtitle={`${favorites.length} memes`}>
+            <Grid.Section title="Favorites" subtitle={`${favorites.length} ${favorites.length === 1 ? 'meme' : 'memes'}`}>
               {favorites.map((meme) => (
                 <MemeGridItem
                   key={meme.id}
@@ -215,7 +236,7 @@ export default function Command() {
             </Grid.Section>
           )}
           {recent.length > 0 && (
-            <Grid.Section title="Recent" subtitle={`${recent.length} memes`}>
+            <Grid.Section title="Memes" subtitle={`${recent.length} ${recent.length === 1 ? 'meme' : 'memes'}`}>
               {recent.map((meme) => (
                 <MemeGridItem
                   key={meme.id}

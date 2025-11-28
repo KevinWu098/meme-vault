@@ -35,6 +35,7 @@ export async function incrementUsage(id: string): Promise<void> {
   const meme = memes.find((m) => m.id === id);
   if (meme) {
     meme.usageCount += 1;
+    meme.lastUsedAt = new Date().toISOString();
     await LocalStorage.setItem(MEMES_KEY, JSON.stringify(memes));
   }
 }

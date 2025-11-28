@@ -5,6 +5,7 @@ export interface Meme {
   description?: string;
   imageUrl?: string;
   addedAt: string;
+  lastUsedAt?: string;
   usageCount: number;
   isFavorite: boolean;
   aspectRatio?: number;

@@ -13,19 +13,20 @@
   "commands": [
     {
       "name": "store-meme",
-      "title": "Store Meme",
+      "title": "Store to Vault",
       "description": "Save a meme from a URL (Tenor, Giphy, Twitter, etc.)",
       "mode": "view"
     },
     {
       "name": "get-meme",
-      "title": "Get Meme",
-      "description": "Browse and copy your saved memes",
+      "title": "Get from Vault",
+      "description": "Browse and paste your saved memes",
       "mode": "view"
     }
   ],
   "dependencies": {
-    "@raycast/api": "latest"
+    "@raycast/api": "latest",
+    "@raycast/utils": "^1.17.0"
   },
   "devDependencies": {
     "@raycast/eslint-config": "^1.0.11",
