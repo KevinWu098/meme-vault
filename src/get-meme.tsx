@@ -28,28 +28,34 @@ interface MemeGridItemProps {
 }
 
 function MemeGridItem({ meme, subtitle, onCopyUrl, onCopyImage, onToggleFavorite, onDelete, formatDate }: MemeGridItemProps) {
+  const isLocal = !!meme.localPath;
+
   return (
     <Grid.Item
       content={{
-        source: meme.imageUrl || Icon.Image,
+        source: meme.localPath || meme.imageUrl || Icon.Image,
         fallback: Icon.Image,
       }}
       title={meme.title || "Untitled"}
       subtitle={subtitle}
-      keywords={[meme.description, meme.url].filter(Boolean) as string[]}
+      keywords={[meme.description, meme.url, meme.title].filter(Boolean) as string[]}
       actions={
         <ActionPanel>
           <ActionPanel.Section>
-            <Action title="Copy URL" icon={Icon.Clipboard} onAction={() => onCopyUrl(meme)} />
-            {meme.imageUrl && (
+            <Action
+              title={isLocal ? "Paste Image" : "Paste URL"}
+              icon={Icon.Clipboard}
+              onAction={() => onCopyUrl(meme)}
+            />
+            {(meme.localPath || meme.imageUrl) && (
               <Action
-                title="Copy Image URL"
-                icon={Icon.Link}
+                title={isLocal ? "Copy Image" : "Copy Image URL"}
+                icon={isLocal ? Icon.Image : Icon.Link}
                 shortcut={{ modifiers: ["cmd", "shift"], key: "c" }}
                 onAction={() => onCopyImage(meme)}
               />
             )}
-            <Action.OpenInBrowser url={meme.url} shortcut={{ modifiers: ["cmd"], key: "o" }} />
+            {!isLocal && <Action.OpenInBrowser url={meme.url} shortcut={{ modifiers: ["cmd"], key: "o" }} />}
           </ActionPanel.Section>
           <ActionPanel.Section>
             <Action
@@ -151,12 +157,23 @@ export default function Command() {
       }
     );
     await closeMainWindow();
-    await Clipboard.paste(meme.url);
+
+    // For local files, paste the file; for URLs, paste the URL
+    if (meme.localPath) {
+      await Clipboard.paste({ file: meme.localPath });
+    } else {
+      await Clipboard.paste(meme.url);
+    }
     await showToast({ style: Toast.Style.Success, title: "Pasted" });
   };
 
   const handleCopyImage = async (meme: Meme) => {
-    if (meme.imageUrl) {
+    if (meme.localPath) {
+      // Copy local file to clipboard
+      await Clipboard.copy({ file: meme.localPath });
+      await closeMainWindow();
+      await showToast({ style: Toast.Style.Success, title: "Image copied" });
+    } else if (meme.imageUrl) {
       await Clipboard.copy(meme.imageUrl);
       await closeMainWindow();
       await showToast({ style: Toast.Style.Success, title: "Image URL copied" });

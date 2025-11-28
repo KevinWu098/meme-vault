@@ -1,21 +1,37 @@
-import { Action, ActionPanel, Form, showToast, Toast, popToRoot } from "@raycast/api";
+import { Action, ActionPanel, environment, Form, showToast, Toast, popToRoot } from "@raycast/api";
+import { copyFileSync, existsSync, mkdirSync } from "fs";
+import { basename, extname, join } from "path";
 import { useState } from "react";
 import { fetchOGMetadata, generateId, isValidUrl } from "./lib/og-scraper";
 import { getMemeByUrl, saveMeme } from "./lib/storage";
 import type { Meme } from "./types";
 
+const IMAGES_DIR = join(environment.supportPath, "images");
+
+// Ensure images directory exists
+function ensureImagesDir() {
+  if (!existsSync(IMAGES_DIR)) {
+    mkdirSync(IMAGES_DIR, { recursive: true });
+  }
+}
+
 export default function Command() {
   const [url, setUrl] = useState("");
+  const [files, setFiles] = useState<string[]>([]);
+  const [title, setTitle] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [urlError, setUrlError] = useState<string | undefined>();
 
   async function handleSubmit() {
-    if (!url.trim()) {
-      setUrlError("URL is required");
+    const hasUrl = url.trim().length > 0;
+    const hasFile = files.length > 0;
+
+    if (!hasUrl && !hasFile) {
+      setUrlError("Enter a URL or select an image file");
       return;
     }
 
-    if (!isValidUrl(url.trim())) {
+    if (hasUrl && !isValidUrl(url.trim())) {
       setUrlError("Please enter a valid URL");
       return;
     }
@@ -24,38 +40,14 @@ export default function Command() {
     setUrlError(undefined);
 
     try {
-      // Check if meme already exists
-      const existing = await getMemeByUrl(url.trim());
-      if (existing) {
-        await showToast({
-          style: Toast.Style.Failure,
-          title: "Meme Already Exists",
-          message: existing.title || url.trim(),
-        });
-        setIsLoading(false);
-        return;
+      if (hasFile) {
+        // Store local image
+        await storeLocalImage(files[0], title);
+      } else {
+        // Store from URL
+        await storeFromUrl(url.trim());
       }
 
-      // Fetch OG metadata
-      const metadata = await fetchOGMetadata(url.trim());
-
-      // Create meme object
-      const meme: Meme = {
-        id: generateId(),
-        url: url.trim(),
-        title: metadata.title,
-        description: metadata.description,
-        imageUrl: metadata.imageUrl,
-        addedAt: new Date().toISOString(),
-        usageCount: 0,
-        isFavorite: false,
-        aspectRatio: metadata.aspectRatio,
-      };
-
-      // Save to storage
-      await saveMeme(meme);
-
-      await showToast({ style: Toast.Style.Success, title: "Saved", message: meme.title || "Meme" });
       await popToRoot();
     } catch (error) {
       await showToast({
@@ -68,15 +60,77 @@ export default function Command() {
     }
   }
 
+  async function storeFromUrl(urlStr: string) {
+    // Check if meme already exists
+    const existing = await getMemeByUrl(urlStr);
+    if (existing) {
+      await showToast({
+        style: Toast.Style.Failure,
+        title: "Meme Already Exists",
+        message: existing.title || urlStr,
+      });
+      return;
+    }
+
+    // Fetch OG metadata
+    const metadata = await fetchOGMetadata(urlStr);
+
+    // Create meme object
+    const meme: Meme = {
+      id: generateId(),
+      url: urlStr,
+      title: metadata.title,
+      description: metadata.description,
+      imageUrl: metadata.imageUrl,
+      addedAt: new Date().toISOString(),
+      usageCount: 0,
+      isFavorite: false,
+      aspectRatio: metadata.aspectRatio,
+    };
+
+    await saveMeme(meme);
+    await showToast({ style: Toast.Style.Success, title: "Saved", message: meme.title || "Meme" });
+  }
+
+  async function storeLocalImage(filePath: string, customTitle: string) {
+    ensureImagesDir();
+
+    // Generate unique filename
+    const id = generateId();
+    const ext = extname(filePath) || ".png";
+    const filename = `${id}${ext}`;
+    const destPath = join(IMAGES_DIR, filename);
+
+    // Copy file to images directory
+    copyFileSync(filePath, destPath);
+
+    // Create meme object
+    const meme: Meme = {
+      id,
+      url: `file://${destPath}`, // Use file:// URL for local files
+      title: customTitle || basename(filePath, ext),
+      localPath: destPath,
+      imageUrl: destPath, // Use local path for display
+      addedAt: new Date().toISOString(),
+      usageCount: 0,
+      isFavorite: false,
+    };
+
+    await saveMeme(meme);
+    await showToast({ style: Toast.Style.Success, title: "Saved", message: meme.title || "Image" });
+  }
+
   return (
     <Form
       isLoading={isLoading}
       actions={
         <ActionPanel>
-          <Action.SubmitForm title="Store Meme" onSubmit={handleSubmit} />
+          <Action.SubmitForm title="Store to Vault" onSubmit={handleSubmit} />
         </ActionPanel>
       }
     >
+      <Form.Description text="Add a meme from URL or select a local image file" />
+
       <Form.TextField
         id="url"
         title="URL"
@@ -84,16 +138,37 @@ export default function Command() {
         value={url}
         onChange={(newValue) => {
           setUrl(newValue);
+          if (newValue.trim()) setFiles([]); // Clear file if URL entered
           if (urlError) setUrlError(undefined);
         }}
         error={urlError}
-        autoFocus
       />
-      <Form.Description
-        title="Supported Sources"
-        text="Tenor, Giphy, Twitter/X, and any site with Open Graph metadata"
+
+      <Form.Separator />
+
+      <Form.FilePicker
+        id="file"
+        title="Or Select Image"
+        allowMultipleSelection={false}
+        canChooseDirectories={false}
+        canChooseFiles={true}
+        value={files}
+        onChange={(newFiles) => {
+          setFiles(newFiles);
+          if (newFiles.length > 0) setUrl(""); // Clear URL if file selected
+          if (urlError) setUrlError(undefined);
+        }}
       />
+
+      {files.length > 0 && (
+        <Form.TextField
+          id="title"
+          title="Title (Optional)"
+          placeholder="My awesome meme"
+          value={title}
+          onChange={setTitle}
+        />
+      )}
     </Form>
   );
 }
-

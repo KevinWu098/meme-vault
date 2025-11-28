@@ -4,6 +4,7 @@ export interface Meme {
   title?: string;
   description?: string;
   imageUrl?: string;
+  localPath?: string; // For locally stored images
   addedAt: string;
   lastUsedAt?: string;
   usageCount: number;
