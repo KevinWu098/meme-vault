@@ -1,4 +1,5 @@
 import { LocalStorage } from "@raycast/api";
+import { existsSync, unlinkSync } from "fs";
 import type { Meme } from "../types";
 
 const MEMES_KEY = "memes";
@@ -26,6 +27,17 @@ export async function saveMeme(meme: Meme): Promise<void> {
 
 export async function deleteMeme(id: string): Promise<void> {
   const memes = await getAllMemes();
+  const memeToDelete = memes.find((m) => m.id === id);
+
+  // Delete local file if it exists
+  if (memeToDelete?.localPath && existsSync(memeToDelete.localPath)) {
+    try {
+      unlinkSync(memeToDelete.localPath);
+    } catch {
+      // Ignore errors deleting file - still remove from storage
+    }
+  }
+
   const filtered = memes.filter((m) => m.id !== id);
   await LocalStorage.setItem(MEMES_KEY, JSON.stringify(filtered));
 }

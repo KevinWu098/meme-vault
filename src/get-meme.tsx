@@ -13,8 +13,9 @@ import {
   Toast,
 } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { deleteMeme, getAllMemes, incrementUsage, toggleFavorite } from "./lib/storage";
+import { formatStorageSize, getStorageStats } from "./lib/storage-utils";
 import type { Meme } from "./types";
 
 interface MemeGridItemProps {
@@ -106,6 +107,9 @@ export default function Command() {
     keepPreviousData: false,
   });
   const [searchText, setSearchText] = useState("");
+
+  // Calculate storage stats (only for local images)
+  const storageStats = useMemo(() => getStorageStats(), [memes]);
 
   // Filter memes
   const filteredMemes = memes.filter((meme) => {
@@ -219,13 +223,18 @@ export default function Command() {
     });
   };
 
+  // Build search placeholder with storage info
+  const searchPlaceholder = 
+     `Search ${memes.length} memes (${formatStorageSize(storageStats.totalSizeMB)} local)...`
+
+
   return (
     <Grid
       columns={3}
       aspectRatio="3/2"
       fit={Grid.Fit.Fill}
       isLoading={isLoading}
-      searchBarPlaceholder="Search memes..."
+      searchBarPlaceholder={searchPlaceholder}
       onSearchTextChange={setSearchText}
     >
       {filteredMemes.length === 0 && !isLoading ? (
@@ -237,7 +246,7 @@ export default function Command() {
       ) : (
         <>
           {favorites.length > 0 && (
-            <Grid.Section title="Favorites" subtitle={`${favorites.length} ${favorites.length === 1 ? 'meme' : 'memes'}`}>
+            <Grid.Section title="Favorites" subtitle={`${favorites.length}`}>
               {favorites.map((meme) => (
                 <MemeGridItem
                   key={meme.id}
@@ -253,7 +262,7 @@ export default function Command() {
             </Grid.Section>
           )}
           {recent.length > 0 && (
-            <Grid.Section title="Memes" subtitle={`${recent.length} ${recent.length === 1 ? 'meme' : 'memes'}`}>
+            <Grid.Section title="Memes" subtitle={`${recent.length}`}>
               {recent.map((meme) => (
                 <MemeGridItem
                   key={meme.id}

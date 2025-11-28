@@ -40,10 +40,10 @@ export default function Command() {
     setUrlError(undefined);
 
     try {
-      if (hasFile) {
+      if (hasFile && files[0]) {
         // Store local image
         await storeLocalImage(files[0], title);
-      } else {
+      } else if (hasUrl) {
         // Store from URL
         await storeFromUrl(url.trim());
       }
